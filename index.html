@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Command Center v3.0</title>
+    <style>
+        :root { 
+            --bg-deep: #03001c; --bg-card: rgba(8, 8, 28, 0.75); 
+            --neon-blue: #0ff; --neon-pink: #f0f; --neon-green: #0f0; 
+            --text-main: #fff; --text-muted: #8892b0;
+            --win-glow: 0 0 15px rgba(0, 255, 0, 0.7);
+            --loss-glow: 0 0 15px rgba(255, 0, 255, 0.7);
+            --candle-green: #00e5a0;
+            --candle-red: #ff3b5c;
+        }
+        
+        * { box-sizing: border-box; }
+
+        body { 
+            font-family: 'Exo 2', sans-serif;
+            background-color: #020b14;
+            color: var(--text-main); 
+            margin: 0; padding: 10px;
+            min-height: 100vh;
+            display: flex; justify-content: center;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* BACKGROUND LAYERS */
+        #bg-canvas {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+        }
+
+        /* Cityscape silhouette overlay */
+        #city-layer {
+            position: fixed; bottom: 0; left: 0;
+            width: 100%; height: 45%;
+            background: 
+                linear-gradient(180deg, transparent 0%, rgba(2, 5, 15, 0.6) 40%, rgba(2, 5, 15, 0.95) 100%);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Fog/mist effect */
+        #fog-layer {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: radial-gradient(ellipse at 50% 60%, rgba(20, 0, 10, 0.4) 0%, transparent 70%);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* Reflection shimmer at bottom */
+        #reflection-layer {
+            position: fixed; bottom: 0; left: 0;
+            width: 100%; height: 30%;
+            background: linear-gradient(180deg, transparent 0%, rgba(0, 229, 160, 0.03) 50%, rgba(255, 59, 92, 0.05) 100%);
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .container { 
+            width: 100%; max-width: 1400px; 
+            z-index: 2; 
+            display: flex; flex-direction: column; gap: 15px;
+            position: relative;
+        }
+
+        /* --- HEADER STATS --- */
+        .stats-top { 
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; 
+            margin-bottom: 5px; padding: 10px;
+            background: rgba(255,255,255,0.02); border-radius: 15px;
+            border: 1px solid rgba(0, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+        }
+        .stat-box { 
+            background: rgba(5, 5, 20, 0.7); padding: 15px; border-radius: 12px; text-align: center; 
+            border: 1px solid rgba(255,255,255,0.06); position: relative; overflow: hidden;
+            transition: 0.3s;
+            backdrop-filter: blur(10px);
+        }
+        .stat-box:hover { border-color: var(--neon-blue); box-shadow: 0 0 10px rgba(0, 255, 255, 0.2); }
+        .stat-box span { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .stat-box strong { display: block; font-size: 1.6rem; margin-top: 5px; font-weight: 900; }
+
+        .val-win { color: var(--candle-green); text-shadow: 0 0 12px rgba(0, 229, 160, 0.6); }
+        .val-loss { color: var(--candle-red); text-shadow: 0 0 12px rgba(255, 59, 92, 0.6); }
+        .val-streak { color: #fbbf24; text-shadow: 0 0 10px rgba(251, 191, 36, 0.5); }
+
+        /* --- LAYOUT --- */
+        .dashboard-grid { 
+            display: grid; 
+            grid-template-columns: 350px 1fr 350px; 
+            gap: 15px; align-items: start; 
+        }
+
+        .card { 
+            background: rgba(5, 5, 20, 0.72);
+            backdrop-filter: blur(24px);
+            padding: 20px; border-radius: 20px; 
+            border: 1px solid rgba(255,255,255,0.07);
+            position: relative;
+        }
+        .card::before {
+            content: ""; position: absolute; top: 0; left: 20px; right: 20px; height: 2px;
+            background: linear-gradient(90deg, var(--candle-green), var(--candle-red));
+            border-radius: 2px;
+        }
+        .card-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .card-title { font-size: 0.9rem; font-weight: bold; text-transform: uppercase; color: var(--neon-blue); letter-spacing: 1px; }
+
+        /* CALENDAR */
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
+        .day-label { font-size: 0.6rem; color: var(--text-muted); padding-bottom: 5px; }
+        .day { 
+            aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            font-size: 0.8rem; border-radius: 8px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); 
+            transition: 0.2s; position: relative; cursor: pointer;
+        }
+        .day:hover { border-color: var(--neon-blue); }
+        .day.win-day { background: rgba(0, 229, 160, 0.12); border-color: var(--candle-green); color: var(--candle-green); box-shadow: 0 0 8px rgba(0,229,160,0.3); }
+        .day.loss-day { background: rgba(255, 59, 92, 0.12); border-color: var(--candle-red); color: var(--candle-red); box-shadow: 0 0 8px rgba(255,59,92,0.3); }
+        .day.today { outline: 2px solid var(--neon-blue); outline-offset: 2px; }
+        .day-pnl { font-size: 0.5rem; position: absolute; bottom: 2px; opacity: 0.8; }
+
+        /* FORM */
+        .input-group { margin-bottom: 15px; position: relative; }
+        label { display: block; font-size: 0.8rem; margin-bottom: 5px; color: var(--text-muted); }
+        input { 
+            width: 100%; padding: 12px 12px 12px 14px; border-radius: 10px; border: 1px solid #1e2a3a; 
+            background: rgba(0,0,0,0.4); color: white; outline: none; transition: 0.3s;
+            font-family: 'Exo 2', sans-serif; font-size: 0.9rem;
+        }
+        input:focus { border-color: var(--candle-green); box-shadow: 0 0 10px rgba(0, 229, 160, 0.2); }
+        
+        .btn-trade { 
+            background: linear-gradient(90deg, var(--candle-green), #00a070); color: #000; 
+            width: 100%; padding: 15px; border: none; border-radius: 12px; font-weight: bold; 
+            cursor: pointer; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;
+            transition: 0.3s; font-family: 'Exo 2', sans-serif; font-size: 0.9rem;
+        }
+        .btn-trade:hover { box-shadow: 0 0 20px rgba(0, 229, 160, 0.5); transform: translateY(-2px); }
+        .btn-cap { background: transparent; border: 1px solid #1e2a3a; color: white; width: 100%; padding: 10px; border-radius: 10px; cursor: pointer; font-size: 0.8rem; transition: 0.3s; font-family: 'Exo 2', sans-serif; }
+        .btn-cap:hover { background: rgba(255,255,255,0.05); border-color: var(--text-muted); }
+
+        .trading-tips {
+            margin-top: 25px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;
+            padding: 15px; background: rgba(0,0,0,0.25); border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.03);
+        }
+        .tip-item { font-size: 0.7rem; color: var(--text-muted); line-height: 1.4; }
+        .tip-item b { color: var(--neon-blue); display: block; margin-bottom: 3px; font-size: 0.75rem;}
+
+        /* HISTORY */
+        .history-list { max-height: 520px; overflow-y: auto; padding-right: 5px; }
+        .history-item { 
+            padding: 12px; margin-bottom: 8px; background: rgba(0,0,0,0.25); 
+            border-radius: 10px; border-left: 3px solid #1e2a3a;
+            display: flex; justify-content: space-between; align-items: center;
+            transition: 0.2s;
+        }
+        .history-item:hover { background: rgba(255,255,255,0.03); transform: translateX(3px); }
+        .history-item.win-border { border-left-color: var(--candle-green); box-shadow: inset 5px 0 10px rgba(0,229,160,0.05); }
+        .history-item.loss-border { border-left-color: var(--candle-red); box-shadow: inset 5px 0 10px rgba(255,59,92,0.05); }
+        .history-list::-webkit-scrollbar { width: 5px; }
+        .history-list::-webkit-scrollbar-track { background: transparent; }
+        .history-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 5px; }
+
+        .icon-small { font-size: 0.8rem; margin-right: 5px; }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- ANIMATED CANDLESTICK BACKGROUND -->
+<canvas id="bg-canvas"></canvas>
+<div id="city-layer"></div>
+<div id="fog-layer"></div>
+<div id="reflection-layer"></div>
+
+<div class="container">
+    <div class="stats-top">
+        <div class="stat-box">
+            <span><i class="icon-small">💰</i>Initial Capital</span>
+            <strong id="display-capital">0$</strong>
+        </div>
+        <div class="stat-box">
+            <span><i class="icon-small">📊</i>Current Balance</span>
+            <strong id="display-balance" style="color: var(--neon-blue); text-shadow: 0 0 10px rgba(0,255,255,0.5);">0$</strong>
+        </div>
+        <div class="stat-box">
+            <span><i class="icon-small">📈</i>Net PnL</span>
+            <strong id="display-pnl">0$</strong>
+        </div>
+        <div class="stat-box">
+            <span><i class="icon-small">🔥</i>Win Streak</span>
+            <strong id="display-streak" class="val-streak">0 Days</strong>
+        </div>
+        <div class="stat-box">
+            <span><i class="icon-small">🎯</i>Performance</span>
+            <strong id="display-growth" style="color: #fff;">0%</strong>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Monthly Journal</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">APRIL / 2026</div>
+            </div>
+            <div class="calendar-grid" id="calendar-grid"></div>
+            <div style="margin-top: 15px; font-size: 0.65rem; color: var(--text-muted); padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+                <div style="display:flex; justify-content: space-between; margin-bottom: 3px;">
+                    <span style="color: var(--candle-green)">● Green: Profitable</span>
+                    <span style="color: var(--candle-red)">● Red: Loss</span>
+                </div>
+                <span>The grid shows your daily PnL summary at a glance.</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><div class="card-title" style="text-align:center; width:100%">Execute Trade</div></div>
+            <div class="input-group">
+                <label><i class="icon-small">💵</i>Amount (Win/Loss USDT)</label>
+                <input type="number" id="input-trade" placeholder="Enter amount, e.g., 128.82 or -50">
+            </div>
+            <div class="input-group">
+                <label><i class="icon-small">📝</i>Trade Note (congrats/shule...)</label>
+                <input type="text" id="input-note" placeholder="Example: PEPE Scalp, yingle, nihao...">
+            </div>
+            <button class="btn-trade" onclick="updateTrade()">Confirm chốt lệnh</button>
+            <button class="btn-cap" onclick="updateCapital()">Deposit More Capital</button>
+
+            <div class="trading-tips">
+                <div class="tip-item">
+                    <b>RISK MANAGEMENT</b>
+                    Always place a Stop Loss. Never risk more than 1% of your total balance per trade.
+                </div>
+                <div class="tip-item">
+                    <b>PSYCHOLOGY</b>
+                    Small losses + Big wins = Profit. Stay disciplined and stick to your strategy.
+                </div>
+                <div class="tip-item">
+                    <b>DESTINATION</b>
+                    愿你我永远幸福快乐.
+                </div>
+                <div class="tip-item">
+                    <b>REMIND</b>
+                    Money is for market. It will fuck you every single time.
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><div class="card-title">Live Trade History</div></div>
+            <div class="history-list" id="history-log"></div>
+        </div>
+    </div>
+    
+    <div style="text-align: center; margin-top: 20px;">
+        <button onclick="clearData()" style="background:transparent; border:none; color:#334155; cursor:pointer; font-size:0.6rem;">[ DANGER ZONE: Wipe All System Data ]</button>
+    </div>
+</div>
+
+<script>
+// =============================================
+// ANIMATED CANDLESTICK BACKGROUND
+// =============================================
+(function() {
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const GREEN = '#00e5a0';
+    const RED = '#ff3b5c';
+    const GREEN_DIM = 'rgba(0,229,160,0.55)';
+    const RED_DIM = 'rgba(255,59,92,0.55)';
+
+    // Candle class
+    class Candle {
+        constructor(x, speed, size) {
+            this.x = x;
+            this.speed = speed;
+            this.size = size; // base width
+            this.reset(true);
+        }
+        reset(init) {
+            const h = canvas.height;
+            // Random position in upper 75% of screen
+            const bodyH = 20 + Math.random() * 120;
+            const wick = 10 + Math.random() * 60;
+            this.bodyH = bodyH * this.size;
+            this.wickTop = wick * this.size * (0.3 + Math.random());
+            this.wickBot = wick * this.size * (0.3 + Math.random());
+            this.totalH = this.bodyH + this.wickTop + this.wickBot;
+            this.isGreen = Math.random() > 0.42; // slightly more red for drama
+            this.color = this.isGreen ? GREEN : RED;
+            this.dimColor = this.isGreen ? GREEN_DIM : RED_DIM;
+            this.alpha = 0.15 + Math.random() * 0.45;
+            this.glow = this.alpha > 0.45;
+            this.w = (4 + Math.random() * 10) * this.size;
+            // Start above screen or at random position
+            if (init) {
+                this.y = Math.random() * h * 0.8;
+            } else {
+                this.y = -this.totalH - 20;
+            }
+        }
+        draw() {
+            const ctx2 = ctx;
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx2.save();
+            ctx2.globalAlpha = this.alpha;
+            
+            if (this.glow) {
+                ctx2.shadowBlur = 18;
+                ctx2.shadowColor = this.color;
+            }
+            
+            ctx2.strokeStyle = this.color;
+            ctx2.lineWidth = 1.5 * this.size;
+            const centerX = this.x;
+            const bodyTop = this.y + this.wickTop;
+            
+            // Wick
+            ctx2.beginPath();
+            ctx2.moveTo(centerX, this.y);
+            ctx2.lineTo(centerX, bodyTop);
+            ctx2.stroke();
+            ctx2.beginPath();
+            ctx2.moveTo(centerX, bodyTop + this.bodyH);
+            ctx2.lineTo(centerX, bodyTop + this.bodyH + this.wickBot);
+            ctx2.stroke();
+            
+            // Body
+            ctx2.fillStyle = this.isGreen ? 'rgba(0,229,160,0.18)' : 'rgba(255,59,92,0.18)';
+            ctx2.strokeStyle = this.color;
+            ctx2.lineWidth = 1 * this.size;
+            ctx2.beginPath();
+            ctx2.roundRect(centerX - this.w/2, bodyTop, this.w, this.bodyH, 2);
+            ctx2.fill();
+            ctx2.stroke();
+            
+            ctx2.restore();
+        }
+        update() {
+            this.y += this.speed;
+            if (this.y > canvas.height + 20) this.reset(false);
+        }
+    }
+
+    // Generate candles spread across screen
+    const candles = [];
+    const numCandles = 28;
+    for (let i = 0; i < numCandles; i++) {
+        const x = (canvas.width / numCandles) * i + Math.random() * (canvas.width / numCandles);
+        const speed = 0.2 + Math.random() * 0.6;
+        const size = 0.4 + Math.random() * 1.2;
+        candles.push(new Candle(x, speed, size));
+    }
+
+    // City skyline drawing
+    function drawCity() {
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.save();
+        
+        // Base city silhouette
+        ctx.fillStyle = 'rgba(2, 5, 15, 0.85)';
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        
+        // Generate building shapes
+        const rng = (seed) => {
+            let x = Math.sin(seed) * 10000;
+            return x - Math.floor(x);
+        };
+        
+        let bx = 0;
+        let bi = 0;
+        while (bx < w) {
+            const bw = 30 + rng(bi * 3.7) * 80;
+            const bh = h * (0.2 + rng(bi * 2.1) * 0.35);
+            ctx.lineTo(bx, h - bh);
+            ctx.lineTo(bx + bw * 0.1, h - bh);
+            // Add some detail
+            if (rng(bi * 5) > 0.5) {
+                const notchW = bw * 0.3;
+                ctx.lineTo(bx + bw * 0.1 + notchW * 0.3, h - bh - rng(bi*7)*20);
+                ctx.lineTo(bx + bw * 0.1 + notchW * 0.7, h - bh - rng(bi*7)*20);
+            }
+            ctx.lineTo(bx + bw, h - bh);
+            ctx.lineTo(bx + bw, h);
+            bx += bw + 2 + rng(bi * 4.3) * 15;
+            bi++;
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Window lights
+        ctx.save();
+        bx = 0; bi = 0;
+        while (bx < w) {
+            const bw = 30 + rng(bi * 3.7) * 80;
+            const bh = h * (0.2 + rng(bi * 2.1) * 0.35);
+            const buildTop = h - bh;
+            
+            // Scatter windows
+            for (let wy = buildTop + 10; wy < h - 15; wy += 12) {
+                for (let wx = bx + 6; wx < bx + bw - 6; wx += 10) {
+                    if (rng(wx * 0.1 + wy * 0.3 + bi) > 0.55) {
+                        const wColor = rng(wx + wy) > 0.7 ? 'rgba(0,229,160,' : 'rgba(255,59,92,';
+                        ctx.fillStyle = wColor + (0.3 + rng(wx*0.2+wy)*0.4) + ')';
+                        ctx.fillRect(wx, wy, 3, 4);
+                    }
+                }
+            }
+            bx += bw + 2 + rng(bi * 4.3) * 15;
+            bi++;
+        }
+        ctx.restore();
+        
+        // Water reflection at very bottom
+        const gradH = h * 0.15;
+        const grad = ctx.createLinearGradient(0, h - gradH, 0, h);
+        grad.addColorStop(0, 'rgba(2,5,15,0.9)');
+        grad.addColorStop(0.4, 'rgba(0,229,160,0.04)');
+        grad.addColorStop(0.7, 'rgba(255,59,92,0.06)');
+        grad.addColorStop(1, 'rgba(2,5,15,0.98)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, h - gradH, w, gradH);
+        
+        ctx.restore();
+    }
+
+    // Scan line effect
+    function drawScanlines() {
+        ctx.save();
+        ctx.globalAlpha = 0.025;
+        for (let y = 0; y < canvas.height; y += 3) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, y, canvas.width, 1);
+        }
+        ctx.restore();
+    }
+
+    // Vignette
+    function drawVignette() {
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const r = Math.max(canvas.width, canvas.height) * 0.75;
+        const grad = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, r);
+        grad.addColorStop(0, 'transparent');
+        grad.addColorStop(1, 'rgba(2,0,10,0.65)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    let frame = 0;
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Deep space background
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        bgGrad.addColorStop(0, '#01050f');
+        bgGrad.addColorStop(0.5, '#020810');
+        bgGrad.addColorStop(1, '#010408');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw candles
+        candles.forEach(c => { c.update(); c.draw(); });
+        
+        // City on top
+        drawCity();
+        drawVignette();
+        drawScanlines();
+        
+        frame++;
+        requestAnimationFrame(animate);
+    }
+    animate();
+})();
+
+// =============================================
+// TRADING DASHBOARD LOGIC
+// =============================================
+let capital = parseFloat(localStorage.getItem('crypto_capital')) || 0;
+let netPnL = parseFloat(localStorage.getItem('crypto_pnl')) || 0;
+let history = JSON.parse(localStorage.getItem('crypto_history')) || [];
+let dailyStats = JSON.parse(localStorage.getItem('crypto_daily')) || {};
+
+const GREEN_COLOR = 'var(--candle-green)';
+const RED_COLOR = 'var(--candle-red)';
+
+function updateDisplay() {
+    const balance = capital + netPnL;
+    const growth = capital > 0 ? ((netPnL / capital) * 100).toFixed(2) : 0;
+
+    document.getElementById('display-capital').innerText = capital.toLocaleString() + '$';
+    document.getElementById('display-balance').innerText = balance.toLocaleString() + '$';
+    
+    const pnlEl = document.getElementById('display-pnl');
+    pnlEl.innerText = (netPnL >= 0 ? '+' : '') + netPnL.toLocaleString() + '$';
+    pnlEl.className = netPnL >= 0 ? 'val-win' : 'val-loss';
+
+    const growthEl = document.getElementById('display-growth');
+    growthEl.innerText = (growth >= 0 ? '+' : '') + growth + '%';
+    growthEl.className = growth >= 0 ? 'val-win' : 'val-loss';
+
+    calculateStreak();
+    renderCalendar();
+    renderHistory();
+    
+    localStorage.setItem('crypto_capital', capital);
+    localStorage.setItem('crypto_pnl', netPnL);
+    localStorage.setItem('crypto_history', JSON.stringify(history));
+    localStorage.setItem('crypto_daily', JSON.stringify(dailyStats));
+}
+
+function calculateStreak() {
+    let streak = 0;
+    const sortedDates = Object.keys(dailyStats).sort().reverse();
+    for (let date of sortedDates) {
+        if (dailyStats[date] > 0) streak++;
+        else if (dailyStats[date] < 0) break;
+    }
+    document.getElementById('display-streak').innerText = streak + " Days";
+}
+
+function updateTrade() {
+    const val = parseFloat(document.getElementById('input-trade').value);
+    const note = document.getElementById('input-note').value || "Market Order";
+    if (isNaN(val)) return;
+
+    const now = new Date();
+    const dateKey = now.toISOString().split('T')[0];
+    netPnL += val;
+    dailyStats[dateKey] = (dailyStats[dateKey] || 0) + val;
+    
+    history.unshift({ 
+        time: `${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')} - ${now.getDate()}/${now.getMonth()+1}`, 
+        amount: val, 
+        note: note 
+    });
+    
+    document.getElementById('input-trade').value = '';
+    document.getElementById('input-note').value = '';
+    updateDisplay();
+}
+
+function renderCalendar() {
+    const grid = document.getElementById('calendar-grid');
+    grid.innerHTML = '';
+    
+    const dayLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    dayLabels.forEach(label => {
+        const labelEl = document.createElement('div');
+        labelEl.className = 'day-label';
+        labelEl.innerText = label;
+        grid.appendChild(labelEl);
+    });
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayOfWeek = new Date(year, month, 1).getDay();
+    let startShift = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+
+    for (let i = 0; i < startShift; i++) grid.appendChild(document.createElement('div'));
+
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dayEl = document.createElement('div');
+        dayEl.className = 'day';
+        dayEl.innerHTML = `<div>${d}</div>`;
+        
+        const pnl = dailyStats[dateStr];
+        if (pnl > 0) {
+            dayEl.classList.add('win-day');
+            dayEl.innerHTML += `<div class="day-pnl">+${pnl.toFixed(1)}$</div>`;
+        } else if (pnl < 0) {
+            dayEl.classList.add('loss-day');
+            dayEl.innerHTML += `<div class="day-pnl">${pnl.toFixed(1)}$</div>`;
+        }
+
+        if (dateStr === now.toISOString().split('T')[0]) dayEl.classList.add('today');
+        grid.appendChild(dayEl);
+    }
+}
+
+function renderHistory() {
+    const log = document.getElementById('history-log');
+    log.innerHTML = history.map(item => `
+        <div class="history-item ${item.amount >= 0 ? 'win-border' : 'loss-border'}">
+            <div>
+                <strong>${item.note}</strong>
+                <small style="color:var(--text-muted); display:block; margin-top:2px;">${item.time}</small>
+            </div>
+            <div style="font-weight:bold; font-size:1rem; color:${item.amount >= 0 ? 'var(--candle-green)' : 'var(--candle-red)'}">
+                ${item.amount >= 0 ? '+' : ''}${item.amount}$
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateCapital() {
+    const val = parseFloat(document.getElementById('input-trade').value);
+    if (!isNaN(val)) { capital += val; document.getElementById('input-trade').value = ''; updateDisplay(); }
+}
+
+function clearData() { 
+    if(confirm("Clear all trading data? This is irreversible!")) { localStorage.clear(); location.reload(); } 
+}
+
+updateDisplay();
+</script>
+</body>
+</html>
